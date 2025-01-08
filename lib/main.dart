@@ -13,8 +13,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Merciless',
-      theme: brandTheme(seedColor: Colors.red),
-      darkTheme: brandTheme(seedColor: Colors.red, darkMode: true, darkBackgroundColor: Colors.black),
+      theme: brandTheme(seedColor: Colors.red, backgroundColor: Colors.deepOrange, textColor: Colors.white),
       home: const Home(),
     );
   }
@@ -30,6 +29,12 @@ class Home extends StatefulWidget {
 class _HomeState extends State<Home> {
   @override
   Widget build(BuildContext context) {
-    return const Placeholder();
+    return Scaffold(
+      appBar: AppBar(
+        centerTitle: true,
+        title: Text("Merciless Main Menu"),
+      ),
+      body: Text("Merciless"),
+    );
   }
 }
