@@ -65,6 +65,30 @@ flutter:
   # assets:
   #   - images/a_dot_burr.jpeg
   #   - images/a_dot_ham.jpeg
+  
+  assets:
+    - assets/card/1.png
+    - assets/card/2.png
+    - assets/card/3.png
+    - assets/card/4.png
+    - assets/card/5.png
+    - assets/card/6.png
+    - assets/card/7.png
+    - assets/card/8.png
+    - assets/card/9.png
+    - assets/card/10.png
+    - assets/card/11.png
+    - assets/card/12.png
+    - assets/card/13.png
+    - assets/card/remove1.png
+    - assets/card/remove2.png
+    - assets/card/remove5.png
+    - assets/card/roofblue.png
+    - assets/card/roofgreen.png
+    - assets/card/roofred.png
+    - assets/card/skip1.png
+    - assets/card/skip2.png
+    - assets/card/steal.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
