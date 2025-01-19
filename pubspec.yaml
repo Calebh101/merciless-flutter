@@ -34,7 +34,7 @@ dependencies:
   http: ^1.2.2
   localpkg:
     git:
-      url: https://github.com/Calebh101/localpkg-flutter.git
+      url: https://github.com/Calebh101/localpkg-flutter
       ref: main
 
   shared_preferences: ^2.3.5
@@ -71,6 +71,7 @@ flutter:
   
   assets:
     - assets/card/cover.png
+    - assets/card/0.png
     - assets/card/1.png
     - assets/card/2.png
     - assets/card/3.png
@@ -92,7 +93,8 @@ flutter:
     - assets/card/roofred.png
     - assets/card/skip1.png
     - assets/card/skip2.png
-    - assets/card/steal.png
+    - assets/card/stealnum.png
+    - assets/card/stealroof.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

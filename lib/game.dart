@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:localpkg/dialogue.dart';
@@ -23,9 +24,12 @@ class Game extends StatefulWidget {
 }
 
 class _GameState extends State<Game> {
+  bool useZero = true;
   int id = 3;
   int players = 4;
-  int handmode = 1; // 0: hand; 1: play; 2: discard; 3: play discard
+  int handmode = 0; // 0: no play; 1: numer; 2: discard; 3: action
+  int actionsPlayed = 0;
+  int nextup = 0;
   io.Socket? socket;
   Map memory = {
     "players": [
@@ -100,22 +104,25 @@ class _GameState extends State<Game> {
     ],
     "hand": [
       {
-        "type": "roofred",
+        "type": "skip1",
       },
       {
-        "type": null,
+        "type": "skip2",
       },
       {
-        "type": "roofblue",
+        "type": "remove1",
       },
       {
-        "type": null,
+        "type": "remove2",
       },
       {
-        "type": null,
+        "type": "remove5",
       },
       {
-        "type": "roofred",
+        "type": "stealnum",
+      },
+      {
+        "type": "stealroof",
       },
     ],
     "drawn": [
@@ -146,12 +153,34 @@ class _GameState extends State<Game> {
     ],
   };
 
+  @override
+  void initState() {
+    super.initState();
+    if (id == 1) {
+      myTurn();
+    }
+  }
+
+  void myTurn() {
+    if (memory["players"][id - 1] != null) {
+      nextup = id - 1;
+    } else {
+      nextup = 1;
+    }
+    handmode = 1;
+    refresh();
+  }
+
   void refresh({bool mini = false}) {
     if (mini) {
       setState(() {});
     }
     print("refreshing...");
     setState(() {});
+  }
+
+  bool isRoofCard(String type) {
+    return (type == "roofred" || type == "roofgreen" || type == "roofblue");
   }
 
   @override
@@ -162,33 +191,7 @@ class _GameState extends State<Game> {
       hand = memory["drawn"];
     }
 
-    print("scanning hand:cards");
-    bool discardPossible = true;
-    bool anyEmpty = false;
-    bool missing = false;
-
-    if (handmode == 2) {
-      hand.asMap().forEach((index, value) {
-        if (value["type"] == null) {
-          anyEmpty = true;
-        }
-      });
-
-      missing = data["cards"].any((itemA) {
-        return !hand.any((itemB) => itemB['type'] == itemA['type']);
-      });
-
-      if (!anyEmpty) {
-        discardPossible = false;
-      }
-
-      if (missing) {
-        discardPossible = true;
-      }
-    }
-
-    print("discard possible: $anyEmpty:$missing ($discardPossible)");
-    print("handmode: $handmode");
+    print("handmode,nextup: $handmode,$nextup");
     print("building scaffold...");
 
     return Scaffold(
@@ -206,6 +209,42 @@ class _GameState extends State<Game> {
             onPressed: () {
               Clipboard.setData(ClipboardData(text: widget.code!));
               showSnackBar(context, "Code copied!");
+            },
+          ),
+          if (kDebugMode)
+          IconButton(
+            icon: Icon(Icons.abc),
+            onPressed: () {
+              TextEditingController controller = TextEditingController();
+                showDialog(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Enter handmode'),
+                    content: TextField(
+                      controller: controller,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(hintText: 'Enter number here'),
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Cancel'),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          String input = controller.text;
+                          Navigator.pop(context, input);
+                        },
+                        child: const Text('OK'),
+                      ),
+                    ],
+                  ),
+                ).then((value) {
+                  if (value != null && value.isNotEmpty) {
+                    handmode = int.tryParse(value) ?? handmode;
+                    refresh();
+                  }
+                });
             },
           ),
         ],
@@ -233,16 +272,21 @@ class _GameState extends State<Game> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  GameCard(card: memory["currentDiscard"]),
+                  GameCard(card: (memory["currentDiscard"] ?? {"type": null})["type"], useZero: useZero),
                   GameCard(card: "cover"),
-                  GameCard(customColor: handmode == 1 ? Colors.green : null, customChild: Material(
+                  GameCard(customColor: handmode != 0 ? Colors.green : null, customChild: Material(
                     color: Colors.transparent,
                     child: InkWell(
                       onTap: () {
-                        if (handmode != 1) {
+                        if (handmode == 0) {
                           return;
                         }
-                        handmode = 2;
+                        if (handmode == 2) {
+                          print("setting discard...");
+                          memory["currentDiscard"] = hand[hand.length - 1];
+                        }
+                        int oldMode = handmode;
+                        handmode = (handmode == 1 ? 2 : (handmode == 2 ? 3 : 0));
                         print("switched to handmode: $oldMode:$handmode");
                         refresh();
                       },
@@ -270,12 +314,17 @@ class _GameState extends State<Game> {
                         int from = drag["index"];
                         print("card dragged: $from");
                         int currentCard = int.tryParse(data["currentCard"]["type"]) ?? 0;
-                        int newCard = int.tryParse(hand[from]["type"]) ?? 0;
+                        int? newCard = int.tryParse(hand[from]["type"]);
+                        if (newCard == null) {
+                          print("invalid");
+                          return;
+                        }
                         bool valid = newCard == (currentCard + 1);
                         print("setting card $currentCard:$newCard:$valid ($newCard == ($currentCard + 1))");
                         if (valid && handmode == 1) {
                           print("valid");
                           data["currentCard"] = hand[from];
+                          hand.removeAt(from);
                         } else {
                           print("invalid: $valid,$handmode");
                         }
@@ -286,20 +335,16 @@ class _GameState extends State<Game> {
                       },
                     ),
                     ...data["cards"].asMap().map((index, item) {
-                      if (handmode == 2 && !discardPossible) {
-                        handmode = 0;
-                        refresh();
-                      }
                       return MapEntry(index, DragTarget(
                         onWillAcceptWithDetails: (data) => true,
                         onAcceptWithDetails: (details) {
                           Map drag = details.data as Map<String, dynamic>;
                           int from = drag["index"];
                           print("card dragged: $from:$index");
-                          String? type = drag["item"]["type"];
+                          String type = drag["item"]["type"];
                           bool contains = data["cards"].any((item) => item['type'] == drag["item"]["type"]);
                           bool empty = data["cards"][index]["type"] == null;
-                          bool isRoof = (type == "roofred" || type == "roofgreen" || type == "roofblue");
+                          bool isRoof = isRoofCard(type);
                           if (isRoof && empty && !contains && handmode == 2) {
                             print("valid");
                             data["cards"][index] = hand[from];
@@ -323,40 +368,40 @@ class _GameState extends State<Game> {
             Section(
               expanded: false,
               child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: List.generate(hand.length, (index) {
-                  List handS = hand;
-                  Map item = hand[index];
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: List.generate(hand.length, (index) {
+                    List handS = hand;
+                    Map item = hand[index];
 
-                  return Draggable(
-                    data: {"index": index, "item": item},
-                    feedback: Material(
-                      color: Colors.transparent,
-                      child: GameCard(card: item["type"]),
-                    ),
-                    childWhenDragging: Opacity(opacity: 0.3, child: GameCard(card: item["type"])),
-                    child: DragTarget(
-                      onWillAcceptWithDetails: (data) => true,
-                      onAcceptWithDetails: (details) {
-                        print("moving item...");
-                        Map draggedItem = details.data as Map<String, dynamic>;
-                        print("drag data: $draggedItem");
-                        int oldIndex = draggedItem["index"];
-                        int newIndex = index;
-                        print("moving card ${item["type"]}: $oldIndex:$newIndex");
-                        handS.removeAt(oldIndex);
-                        handS.insert(newIndex, draggedItem["item"]);
-                        hand = handS;
-                        refresh();
-                      },
-                      builder: (context, candidateData, rejectedData) {
-                        return GameCard(card: item["type"]);
-                      },
-                    ),
-                  );
-                }).toList(),
-              ),
+                    return Draggable(
+                      data: {"index": index, "item": item},
+                      feedback: Material(
+                        color: Colors.transparent,
+                        child: GameCard(card: item["type"]),
+                      ),
+                      childWhenDragging: Opacity(opacity: 0.3, child: GameCard(card: item["type"])),
+                      child: DragTarget(
+                        onWillAcceptWithDetails: (data) => true,
+                        onAcceptWithDetails: (details) {
+                          print("moving item...");
+                          Map draggedItem = details.data as Map<String, dynamic>;
+                          print("drag data: $draggedItem");
+                          int oldIndex = draggedItem["index"];
+                          int newIndex = index;
+                          print("moving card ${item["type"]}: $oldIndex:$newIndex");
+                          handS.removeAt(oldIndex);
+                          handS.insert(newIndex, draggedItem["item"]);
+                          hand = handS;
+                          refresh();
+                        },
+                        builder: (context, candidateData, rejectedData) {
+                          return GameCard(card: item["type"]);
+                        },
+                      ),
+                    );
+                  }).toList(),
+                ),
               ),
             ),
           ],
@@ -365,11 +410,17 @@ class _GameState extends State<Game> {
     );
   }
 
-  Widget GameCard({Color? customColor, Widget? customChild, bool active = false, String? card, double size = 1, int drawStack = 0}) {
+  Widget GameCard({Color? customColor, Widget? customChild, bool active = false, String? card, double size = 1, int drawStack = 0, double padding = 8, bool useZero = false}) {
+    if (card == "0") {
+      card = null;
+    }
+    if (useZero) {
+      card ??= "0";
+    }
     bool draw = card == "draw";
     bool image = !(card == null || draw);
     return Padding(
-      padding: EdgeInsets.all(8 * size),
+      padding: EdgeInsets.all(padding * size),
       child: Container(
         width: 55 * size,
         height: 80 * size,
@@ -389,28 +440,81 @@ class _GameState extends State<Game> {
 
   Widget Player({required int player}) {
     Map data = memory["players"].firstWhere((item) => item["id"] == player);
+    List cards = [data["currentCard"], ...data["cards"]];
     return Expanded(
-      child: Container(
-        child: Center(
-          child: Column(
-            children: [
-              Text("Player $player"),
-              GridView.count(
-                shrinkWrap: true,
-                crossAxisCount: 2,
-                childAspectRatio: 3 / 4,
-                children: [
-                  GameCard(card: data["currentCard"]["type"]),
-                  ...data["cards"].map((item) {
-                    return GameCard(
-                      card: item["type"],
-                    );
-                  }).toList(),
-                ],
-              ),
-            ],
-          ),
-        ),
+      child: DragTarget(
+        builder: (context, candidateData, rejectedData) {
+          return Center(
+            child: Column(
+              children: [
+                Text("Player $player"),
+                GridView.count(
+                  shrinkWrap: true,
+                  crossAxisCount: 2,
+                  childAspectRatio: 3 / 4,
+                  children: [
+                    ...cards.asMap().entries.map((entry) {
+                      int index = entry.key;
+                      var item = entry.value;
+                      return GameCard(
+                        card: item["type"],
+                        padding: 4,
+                        useZero: index == 0 ? useZero : false,
+                      );
+                    }),
+                  ],
+                ),
+              ],
+            ),
+          );
+        },
+        onWillAcceptWithDetails: (data) => true,
+        onAcceptWithDetails: (details) async {
+          print("dragged to player $player");
+          if (handmode != 3) {
+            return;
+          }
+          Map drag = details.data as Map<String, dynamic>;
+          String type = drag["item"]["type"];
+          actionsPlayed++;
+          switch (type) {
+            case 'remove1' || 'remove2' || 'remove5':
+              int current = int.tryParse(data["currentCard"]["type"]) ?? 0;
+              int remove = int.parse(type.replaceAll('remove', ''));
+              int after = current - remove;
+              after = after < 0 ? 0 : after;
+              data["currentCard"]["type"] = "$after";
+              print("removed $remove from $player: $current:$after");
+              refresh();
+              break;
+            case 'skip1' || 'skip2':
+              int skip = int.parse(type.replaceAll('skip', ''));
+              print("new skip: $skip");
+              nextup = ((nextup + skip - 1) % memory["players"].length + 1).toInt();
+              print("set nextup to $nextup");
+              refresh();
+              break;
+            case 'stealnum':
+              int current = int.tryParse(data["currentCard"]["type"]) ?? 0;
+              int after = current - 1;
+              if (current == 0) {
+                actionsPlayed++;
+                showSnackBar(context, "There's no card to steal!");
+                break;
+              }
+              memory["hand"].add(data["currentCard"]);
+              data["currentCard"]["type"] = "$after";
+              break;
+            case 'stealroof':
+              break;
+            default:
+              actionsPlayed--;
+              break;
+          }
+          if (actionsPlayed >= 2) {
+            handmode = 0;
+          }
+        },
       ),
     );
   }
