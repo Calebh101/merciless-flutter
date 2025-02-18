@@ -1,3 +1,5 @@
+// ignore_for_file: unnecessary_null_comparison
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -5,6 +7,7 @@ import 'package:localpkg/dialogue.dart';
 import 'package:localpkg/functions.dart';
 import 'package:localpkg/widgets.dart';
 import 'package:localpkg/logger.dart';
+import 'package:merciless/main.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 
 class Game extends StatefulWidget {
@@ -25,6 +28,7 @@ class Game extends StatefulWidget {
 
 class _GameState extends State<Game> {
   bool useZero = true;
+  bool loading = true;
   int id = 3;
   int players = 4;
   int handmode = 0; // 0: no play; 1: numer; 2: discard; 3: action
@@ -159,6 +163,10 @@ class _GameState extends State<Game> {
     if (id == 1) {
       myTurn();
     }
+    if (widget.mode == 1) {
+      loading = false;
+      refresh();
+    }
   }
 
   void myTurn() {
@@ -185,6 +193,19 @@ class _GameState extends State<Game> {
 
   @override
   Widget build(BuildContext context) {
+    if (loading == true) {
+      print("building loader scaffold...");
+      return Scaffold(
+        appBar: AppBar(
+          toolbarHeight: 48.0,
+          leading: GameCloseButton(),
+        ),
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
     Map data = memory["players"].firstWhere((item) => item["id"] == id);
     List hand = memory["hand"];
     if (handmode == 1 || handmode == 2) {
@@ -259,7 +280,7 @@ class _GameState extends State<Game> {
                   ...List.generate(players, (index) {
                     int i = index + 1;
                     if (i != id) {
-                      return Player(player: i);
+                      return Player(player: i, dataS: data);
                     } else {
                       return SizedBox.shrink();
                     }
@@ -438,7 +459,7 @@ class _GameState extends State<Game> {
     );
   }
 
-  Widget Player({required int player}) {
+  Widget Player({required int player, required Map dataS}) {
     Map data = memory["players"].firstWhere((item) => item["id"] == player);
     List cards = [data["currentCard"], ...data["cards"]];
     return Expanded(
@@ -485,14 +506,12 @@ class _GameState extends State<Game> {
               after = after < 0 ? 0 : after;
               data["currentCard"]["type"] = "$after";
               print("removed $remove from $player: $current:$after");
-              refresh();
               break;
             case 'skip1' || 'skip2':
               int skip = int.parse(type.replaceAll('skip', ''));
               print("new skip: $skip");
               nextup = ((nextup + skip - 1) % memory["players"].length + 1).toInt();
               print("set nextup to $nextup");
-              refresh();
               break;
             case 'stealnum':
               int current = int.tryParse(data["currentCard"]["type"]) ?? 0;
@@ -502,20 +521,87 @@ class _GameState extends State<Game> {
                 showSnackBar(context, "There's no card to steal!");
                 break;
               }
-              memory["hand"].add(data["currentCard"]);
+              if (current == ((int.tryParse(dataS["currentCard"]["type"]) ?? 0) + 1)) {
+                print("valid steal");
+              } else {
+                print("invalid steal: $current:${dataS["currentCard"]["type"]}");
+                return showSnackBar(context, "You can't steal that!");
+              }
               data["currentCard"]["type"] = "$after";
+              dataS["currentCard"]["type"] = "$current";
               break;
             case 'stealroof':
+              bool discardOpen = data["cards"].any((map) => map["type"] == null);
+              print("discard open: $discardOpen");
+              if (discardOpen == false) {
+                print("discard not open");
+                actionsPlayed--;
+                return showSnackBar(context, "You have no discard slots open!");
+              }
+              Map? response = await selectCard(context: context, cards: data["cards"].where((item) => isRoofCard(item["type"])).toList());
+              if (response != null) {
+                //
+              } else {
+                actionsPlayed--;
+              }
               break;
             default:
               actionsPlayed--;
               break;
           }
           if (actionsPlayed >= 2) {
+            actionsPlayed = 0;
             handmode = 0;
           }
+          refresh();
         },
       ),
+    );
+  }
+
+  Future<Map?> selectCard({
+    required BuildContext context,
+    required List cards,
+  }) {
+    bool cancel = true;
+    bool fullscreen = true;
+    Map? card;
+    return showDialog<Map>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text("Steal a Roof Card"),
+          content: Container(
+            width: fullscreen ? MediaQuery.of(context).size.width * 0.95 : null,
+            height: fullscreen ? MediaQuery.of(context).size.height * 0.95 : null,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  //
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            cancel ? TextButton(
+              child: const Text('Cancel'),
+              onPressed: () {
+                Navigator.of(context).pop(null); 
+              },
+            ) : const SizedBox.shrink(),
+            TextButton(
+              child: const Text('OK'),
+              onPressed: () {
+                if (card == null) {
+                  showSnackBar(context, "No card selected");
+                }
+                Navigator.of(context).pop(card); 
+              },
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -526,6 +612,7 @@ class _GameState extends State<Game> {
         if (await showConfirmDialogue(context: context, title: "Exit the match?", description: "Are you sure you want to exit the match? You will not be able to rejoin.") ?? false) {
           print("disconnecting...");
           socket?.disconnect();
+          navigate(context: context, page: HomePage());
         }
       },
       iconSize: 32,
